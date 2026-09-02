@@ -1,85 +1,50 @@
---- Lists available versions for a tool in this backend
+--- Lists available nim versions from nim-lang/Nim tags
+--- TODO(upstream): requires BackendResolveLockInfo hook in mise vfox crate
+--- so locked installs reproduce MISE_NIM_COMPILE build-method marks.
+--- Workaround: read MISE_NIM_COMPILE env directly; build method is NOT
+--- recorded in lockfile (plugin has no PlatformInfo access).
 --- Documentation: https://mise.jdx.dev/backend-plugin-development.html#backendlistversions
---- @param ctx {tool: string} Context (tool = the tool name requested)
---- @return {versions: string[]} Table containing list of available versions
+--- @param ctx {tool: string} Context
+--- @return {versions: string[]}
 function PLUGIN:BackendListVersions(ctx)
-    local tool = ctx.tool
-
-    -- Validate tool name
-    if not tool or tool == "" then
-        error("Tool name cannot be empty")
+    local cmd = require("cmd")
+    -- Fast path: git ls-remote --tags --refs nim-lang/Nim v*
+    local result = cmd.exec(
+        "git ls-remote --tags --refs " ..
+        "https://github.com/nim-lang/Nim v*"
+    )
+    if not result or result == "" then
+        error("Failed to list nim versions from nim-lang/Nim")
     end
 
-    -- Example implementations (choose/modify based on your backend):
-
-    -- Example 1: API-based version listing (like npm, pip, cargo)
-    local http = require("http")
-    local json = require("json")
-
-    -- Replace with your backend's API endpoint
-    local api_url = "https://api.<BACKEND>.org/packages/" .. tool .. "/versions"
-
-    local resp, err = http.get({
-        url = api_url,
-        -- headers = { ["Authorization"] = "Bearer " .. token } -- if needed
-    })
-
-    if err then
-        error("Failed to fetch versions for " .. tool .. ": " .. err)
-    end
-
-    if resp.status_code ~= 200 then
-        error("API returned status " .. resp.status_code .. " for " .. tool)
-    end
-
-    local data = json.decode(resp.body)
     local versions = {}
-
-    -- Parse versions from API response (adjust based on your API structure)
-    if data.versions then
-        for _, version in ipairs(data.versions) do
-            table.insert(versions, version)
+    for line in result:gmatch("(.-)\n") do
+        -- Extract tag like refs/tags/v2.2.0
+        local tag_ref = line:match("^refs/tags/v(.+)")
+        if tag_ref then
+            -- Strip any trailing ^{} annotation
+            local clean = tag_ref:gsub("%^{.*}$", "")
+            -- Filter semver: ^[0-9]+\.[0-9]+\.[0-9]+$; exclude pre-releases
+            if clean:match("^[0-9]+%.[0-9]+%.[0-9]+$") then
+                table.insert(versions, clean)
+            end
         end
     end
 
-    -- Example 2: Command-line based version listing
-    --[[
-    local cmd = require("cmd")
+    -- Deduplicate and sort
+    local seen = {}
+    local unique = {}
+    for _, v in ipairs(versions) do
+        if not seen[v] then
+            seen[v] = true
+            table.insert(unique, v)
+        end
+    end
+    table.sort(unique)
 
-    -- Replace with your backend's command to list versions
-    local command = "<BACKEND> search " .. tool .. " --versions"
-    local result = cmd.exec(command)
-
-    if not result or result:match("error") then
-        error("Failed to fetch versions for " .. tool)
+    if #unique == 0 then
+        error("No valid nim versions found")
     end
 
-    local versions = {}
-    -- Parse command output to extract versions
-    for version in result:gmatch("[%d%.]+[%w%-]*") do
-        table.insert(versions, version)
-    end
-    --]]
-
-    -- Example 3: Registry file parsing
-    --[[
-    local file = require("file")
-
-    -- Replace with path to your backend's registry or manifest
-    local registry_path = "/path/to/<BACKEND>/registry/" .. tool .. ".json"
-
-    if not file.exists(registry_path) then
-        error("Tool " .. tool .. " not found in registry")
-    end
-
-    local content = file.read(registry_path)
-    local data = json.decode(content)
-    local versions = data.versions or {}
-    --]]
-
-    if #versions == 0 then
-        error("No versions found for " .. tool)
-    end
-
-    return { versions = versions }
+    return { versions = unique }
 end

@@ -6,6 +6,7 @@ actionlint = "latest"
 hk = "latest"
 lua = "5.4"
 lua-language-server = "latest"
+markdownlint-cli2 = "latest"
 pkl = "latest"
 stylua = "latest"
 

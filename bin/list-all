@@ -1,0 +1,32 @@
+#!/usr/bin/env lua
+-- list-all: prints available nim versions, one per line (for mise tool discovery)
+local cmd = require("cmd")
+
+local result = cmd.exec(
+    "git ls-remote --tags --refs " ..
+    "https://github.com/nim-lang/Nim v*"
+)
+
+if not result or result == "" then
+    error("Failed to list nim versions from nim-lang/Nim")
+end
+
+local versions = {}
+for line in result:gmatch("(.-)\n") do
+    local tag_ref = line:match("^refs/tags/v(.+)")
+    if tag_ref then
+        local clean = tag_ref:gsub("%^{.*}$", "")
+        if clean:match("^[0-9]+%.[0-9]+%.[0-9]+$") then
+            table.insert(versions, clean)
+        end
+    end
+end
+
+-- Deduplicate and sort
+local seen = {}
+for _, v in ipairs(versions) do
+    if not seen[v] then
+        seen[v] = true
+        print(v)
+    end
+end
